@@ -1866,6 +1866,82 @@ bool RefactoringActionConvertStringsConcatenationToInterpolation::performChange(
   return false;
 }
 
+struct NestedIfStatementsInfo {
+  IfStmt *FirstIfStmt = nullptr;
+  llvm::SmallVector<StmtCondition, 4> Conditions;
+  BraceStmt *LastThenStmt = nullptr;
+
+  bool canProceed() { return FirstIfStmt && Conditions.size() > 1 && LastThenStmt; }
+};
+
+static NestedIfStatementsInfo findNestedIfStatements(ResolvedCursorInfo CursorInfo) {
+  if (CursorInfo.Kind != CursorInfoKind::StmtStart)
+    return NestedIfStatementsInfo();
+
+  struct NestedIfStatementsFinder: public SourceEntityWalker {
+    NestedIfStatementsInfo Result;
+
+    bool walkToStmtPre(Stmt *S) {
+      if (S->getKind() != StmtKind::If)
+        return false;
+
+      auto *IS = dyn_cast<IfStmt>(S);
+      if (!Result.FirstIfStmt)
+        Result.FirstIfStmt = IS;
+      else if (IS->getElseStmt())
+        // Can't handle nested if statements with else.
+        return false;
+
+      Result.LastThenStmt = dyn_cast<BraceStmt>(IS->getThenStmt());
+      // Can apply refactoring only when then statement has 1 element.
+      if (Result.LastThenStmt->getNumElements() != 1)
+        return false;
+
+      Result.Conditions.push_back(IS->getCond());
+
+      // Walk first AST node inside then statement recursively.
+      auto AN = Result.LastThenStmt->getElement(0);
+      AN.walk(*this);
+      return false;
+    }
+  } Walker;
+
+  Walker.walk(CursorInfo.TrailingStmt);
+  return Walker.Result;
+}
+
+bool RefactoringActionCollapseNestedIfStatement::
+isApplicable(ResolvedCursorInfo CursorInfo, DiagnosticEngine &Diag) {
+  return findNestedIfStatements(CursorInfo).canProceed();
+}
+
+bool RefactoringActionCollapseNestedIfStatement::performChange() {
+  auto Result = findNestedIfStatements(CursorInfo);
+  if (!Result.canProceed())
+    return true;
+
+  llvm::SmallString<64> Buffer;
+  llvm::raw_svector_ostream OS(Buffer);
+  OS << tok::kw_if << " ";
+
+  auto Separator = "";
+  std::for_each(Result.Conditions.begin(), Result.Conditions.end(), [&](StmtCondition SC) {
+    auto Range = SourceRange(SC.front().getStartLoc(), SC.back().getEndLoc());
+    auto ConditionText = Lexer::getCharSourceRangeFromSourceRange(SM, Range).str();
+    OS << Separator << ConditionText;
+    Separator = ", ";
+  });
+
+  auto ThenStatementText = Lexer::getCharSourceRangeFromSourceRange(SM, Result.LastThenStmt->getSourceRange()).str();
+  OS << " " << ThenStatementText;
+
+  auto IfThenRange = SourceRange(Result.FirstIfStmt->getSourceRange().Start,
+                                 Result.FirstIfStmt->getThenStmt()->getSourceRange().End);
+  auto SourceRange = Lexer::getCharSourceRangeFromSourceRange(SM, IfThenRange);
+  EditConsumer.accept(SM, SourceRange, Buffer.str());
+  return false;
+}
+
 /// Abstract helper class containing info about an IfExpr
 /// that can be expanded into an IfStmt.
 class ExpandableTernaryExprInfo {

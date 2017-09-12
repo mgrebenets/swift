@@ -50,6 +50,8 @@ CURSOR_REFACTORING(ConvertToDoCatch, "Convert To Do/Catch", convert.do.catch)
 
 CURSOR_REFACTORING(TrailingClosure, "Convert To Trailing Closure", trailingclosure)
 
+CURSOR_REFACTORING(CollapseNestedIfStatement, "Collapse Nested If Statement", collapse.nested.if.statement)
+
 CURSOR_REFACTORING(MemberwiseInitLocalRefactoring, "Generate Memberwise Initializer", memberwise.init.local.refactoring)
 
 RANGE_REFACTORING(ExtractExpr, "Extract Expression", extract.expr)
