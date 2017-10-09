@@ -1552,6 +1552,235 @@ bool RefactoringActionCollapseNestedIfExpr::performChange() {
   return false;
 }
 
+static void printCursorInfo(ResolvedCursorInfo CursorInfo) {
+  llvm::raw_ostream &OS = llvm::dbgs();
+  // auto OS = &
+
+  OS << "Kind: ";
+  switch(CursorInfo.Kind) {
+    case CursorInfoKind::ModuleRef:
+      OS << "ModuleRef\n";
+      break;
+    case CursorInfoKind::Invalid:
+      OS << "Invalid\n";
+      break;
+    case CursorInfoKind::StmtStart:
+      OS << "StmtStart\n";
+      break;
+    case CursorInfoKind::ExprStart:
+      OS << "ExprStart\n";
+      break;
+    case CursorInfoKind::ValueRef:
+      OS << "ValueRef\n";
+      break;
+    }
+
+  // CursorInfoKind Kind = CursorInfoKind::Invalid;
+  OS << "ValueD: " << CursorInfo.ValueD << "\n";
+  if (CursorInfo.ValueD) {
+    OS << "\tname: "; CursorInfo.ValueD->getFullName().printPretty(OS); OS << "\n";
+    OS << "\tref: " << CursorInfo.ValueD->printRef() << "\n";
+    OS << "\tisDefinition: " << CursorInfo.ValueD->isDefinition() << "\n";
+    OS << "\talreadyCheckedRedeclaration: " << CursorInfo.ValueD->alreadyCheckedRedeclaration() << "\n";
+    OS << "\tisUserAccessible: " << CursorInfo.ValueD->isUserAccessible() << "\n";
+    OS << "\tisOperator: " << CursorInfo.ValueD->isOperator() << "\n";
+    OS << "\thasAccess: " << CursorInfo.ValueD->hasAccess() << "\n";
+    OS << "\thasInterfaceType: " << CursorInfo.ValueD->hasInterfaceType() << "\n";
+    OS << "\thasValidSignature: " << CursorInfo.ValueD->hasValidSignature() << "\n";
+    // OS << "\tisSettable: " << CursorInfo.ValueD->isSettable() << "\n";
+    OS << "\tisInstanceMember: " << CursorInfo.ValueD->isInstanceMember() << "\n";
+    OS << "\tisStatic: " << CursorInfo.ValueD->isStatic() << "\n";
+    OS << "\tKind: " << Decl::getKindName(CursorInfo.ValueD->getKind()) << "\n";
+    OS << "\tDescriptive Kind: " << Decl::getDescriptiveKindName(CursorInfo.ValueD->getDescriptiveKind()) << "\n";
+
+    OS << "\n***\n"; CursorInfo.ValueD->print(OS); OS << "\n***\n";
+
+    auto *PBD = dyn_cast<PatternBindingDecl>(CursorInfo.ValueD);
+    OS << "Pattern Biding Declaration: " << PBD << "\n";
+
+    auto *VarD = dyn_cast<VarDecl>(CursorInfo.ValueD);
+    OS << "ValueD as VarD: " << VarD << "\n";
+    if (VarD) {
+      OS << "\n$$$\n";
+      // swift::PrintAST::visitVarDecl(VarD);
+      OS << "\tname: " << VarD->getNameStr() << "\n";
+      OS << "\thasType: " << VarD->hasType() << "\n";
+      OS << "\tSpecifier: " << (int)(VarD->getSpecifier()) << "\n";
+      OS << "\thasStorage: " << VarD->hasStorage() << "\n";
+      OS << "\tStorageKind: " << (int)(VarD->getStorageKind()) << "\n";
+      OS << "\tisTransparent: " << VarD->isTransparent() << "\n";
+
+      auto *PBD = VarD->getParentPatternBinding();
+      OS << "\tpatternBindingDecl: " << PBD << "\n";
+      OS << "\t\thasStorage: " << PBD->hasStorage() << "\n";
+      OS << "\t\tisDefaultInitializable: " << PBD->isDefaultInitializable() << "\n";
+        OS << "\t\t kind: " << Decl::getKindName(PBD->getKind()) << "\n";
+
+        OS << "\t\tdescriptive kind: " << Decl::getDescriptiveKindName(PBD->getDescriptiveKind()) << "\n";
+
+        auto *DC = PBD->getDeclContext();
+        OS << "DeclContext: " << DC << "\n";
+        DC->printContext(OS);
+        OS << "\n";
+
+      auto *IE = PBD->getInit(0);
+      OS << "\t\tinitialExpr: " << IE << "\n";
+        OS << "\t\tkind: " << Expr::getKindName(IE->getKind()) << "\n";
+        OS << "\t\ttype: " << IE->getType()->getString() << "\n";
+//        IE->dump(OS);
+//        OS << "---\n";
+        IE->print(OS);
+
+
+
+      auto Ty = VarD->getType();
+      OS << "\tType:\n";
+      OS << "\t\tisNull: " << Ty.isNull() << "\n";
+      OS << "\t\t"; Ty.dump(OS);
+      OS << "\t\tname: " << Ty.getString() << "\n";
+      // auto CT = dyn_cast<CanType>(Ty);
+      OS << "\n$$$\n";
+    }
+  }
+
+  OS << "CtorTyRef: " << CursorInfo.CtorTyRef << "\n";
+  OS << "ExtTyRef: " << CursorInfo.ExtTyRef << "\n";
+  // OS << "ModuleEntity: " << CursorInfo.Mod.getFullName() << "\n";
+  // SourceLoc Loc;
+
+  OS << "IsRef: " << CursorInfo.IsRef << "\n";
+  OS << "IsKeywordArgument: " << CursorInfo.IsKeywordArgument << "\n";
+  OS << "Type: "; CursorInfo.Ty.print(OS); OS << "\n";
+  OS << "DeclContext: " << CursorInfo.DC << "\n";
+  if (CursorInfo.DC) {
+    OS << "\tisLocalContext: " << CursorInfo.DC->isLocalContext() << "\n";
+    OS << "\tisModuleContext: " << CursorInfo.DC->isModuleContext() << "\n";
+    OS << "\tisTypeContext: " << CursorInfo.DC->isTypeContext() << "\n";
+    OS << "\tisExtensionContext: " << CursorInfo.DC->isExtensionContext() << "\n";
+    OS << "Context:\n"; CursorInfo.DC->printContext(OS); OS << "---\n";
+    OS << "ContextKind: " << (int)(CursorInfo.DC->getContextKind()) << "\n";
+  }
+  OS << "ContainerType: "; CursorInfo.ContainerType.print(OS); OS << "\n";
+  OS << "TrailingStmt: " << CursorInfo.TrailingStmt << "\n";
+  OS << "TrailingExpr: " << CursorInfo.TrailingExpr << "\n";
+  OS << "--- CursorInfo ---\n";
+}
+
+bool RefactoringActionConvertToComputedProperty::
+isApplicable(ResolvedCursorInfo CursorInfo, DiagnosticEngine &Diag) {
+  llvm::dbgs() << "---RefactoringActionConvertToComputedProperty::isApplicable\n";
+  printCursorInfo(CursorInfo);
+
+  // TODO: Use isStructOrClassContext or similar here
+
+  if (CursorInfo.Kind != CursorInfoKind::ValueRef)
+    return false;
+  auto *VarD = dyn_cast<VarDecl>(CursorInfo.ValueD);
+  if (VarD == nullptr)
+    return false;
+  if (!CursorInfo.DC || CursorInfo.DC->isTypeContext() == false || CursorInfo.DC->isExtensionContext())
+    return false;
+
+  // if (CursorInfo.Kind != CursorInfoKind::StmtStart)
+  //   return false;
+  llvm::dbgs() << "---true---\n\n";
+
+  return true;
+}
+
+bool RefactoringActionConvertToComputedProperty::performChange() {
+    if (!isApplicable(CursorInfo, DiagEngine))
+        return true;
+
+    llvm::dbgs() << "Perform Action\n";
+
+    auto *VarD = dyn_cast<VarDecl>(CursorInfo.ValueD);
+//    auto *PBD = VarD->getParentPatternBinding();
+    auto *IE = VarD->getParentInitializer();
+    //PBD->getInit(0);
+
+//    auto Start = PBD->getSourceRange().End;
+//    auto Start = VarD->getTypeLoc().getSourceRange().Start;
+//    auto Start = VarD->getSourceRange().End;
+    auto Start = VarD->getLoc();
+    auto End = IE->getSourceRange().End;
+    auto ReplaceRange = SourceRange(Start, End);
+
+    auto *PPS = VarD->getParentPatternStmt();
+    auto *PBD = VarD->getParentPatternBinding();
+    auto *PP = VarD->getParentPattern();
+    llvm::dbgs() << "PPS: " << PPS << "\n";
+//    llvm::dbgs() << "Statement kind: " << Stmt::getKindName(PPS->getKind()) << "\n";
+
+    auto A = Lexer::getCharSourceRangeFromSourceRange(SM, ReplaceRange).str();
+    llvm::dbgs() << "A: " << A << "\n";
+    auto B = Lexer::getCharSourceRangeFromSourceRange(SM, SourceRange(VarD->getSourceRange().End, IE->getSourceRange().End)).str();
+    llvm::dbgs() << "B: " << B << "\n";
+    auto C = Lexer::getCharSourceRangeFromSourceRange(SM, SourceRange(VarD->getSourceRange().Start, IE->getSourceRange().End)).str();
+    llvm::dbgs() << "C: " << C << "\n";
+    auto D = Lexer::getCharSourceRangeFromSourceRange(SM, SourceRange(VarD->getSourceRange().Start, IE->getSourceRange().Start)).str();
+    llvm::dbgs() << "D: " << D << "\n";
+    auto BR = VarD->getBracesRange();
+    auto BRS = Lexer::getCharSourceRangeFromSourceRange(SM, BR).str();
+    llvm::dbgs() << "BRS: " << BRS << "\n";
+    auto NameLocS = Lexer::getCharSourceRangeFromSourceRange(SM, VarD->getNameLoc()).str();
+    llvm::dbgs() << "VarD NameLoc: " << NameLocS << "\n";
+    auto LocS = Lexer::getCharSourceRangeFromSourceRange(SM, VarD->getLoc()).str();
+    llvm::dbgs() << "VarD Loc: " << LocS << "\n";
+
+    auto E = Lexer::getCharSourceRangeFromSourceRange(SM, VarD->getStartLoc()).str();
+    llvm::dbgs() << "E: " << E << "\n";
+
+    auto F = Lexer::getCharSourceRangeFromSourceRange(SM, VarD->getSourceRange()).str();
+    llvm::dbgs() << "F: " << F << "\n";
+
+    auto PBDString = Lexer::getCharSourceRangeFromSourceRange(SM, PBD->getSourceRange()).str();
+    llvm::dbgs() << "PBDString: " << PBDString << "\n";
+
+    PBD->print(llvm::dbgs());
+    llvm::dbgs() << "\n";
+    PBD->dump(llvm::dbgs());
+    llvm::dbgs() << "\n";
+
+    // TODO: Try to walk PBD and see what it gives
+
+
+    // PBD->walk(Walker) which nees ASTWalker or just get SourceNtittyWalker and see if it walk this
+
+    llvm::dbgs() << "PP kind: " << Pattern::getKindName(PP->getKind()) << "\n";
+    auto PPString = Lexer::getCharSourceRangeFromSourceRange(SM, PP->getSourceRange()).str();
+    llvm::dbgs() << "PPString: " << PPString << "\n";
+
+
+
+
+    llvm::dbgs() << "...\n";
+
+
+    EditorConsumerInsertStream OS(EditConsumer, SM, Lexer::getCharSourceRangeFromSourceRange(SM, ReplaceRange));
+    auto InitialValue = Lexer::getCharSourceRangeFromSourceRange(SM, IE->getSourceRange()).str();
+
+    OS <<  tok::colon << " " << IE->getType()->getString() << " " << tok::l_brace << "\n";
+    OS << tok::kw_return << " " << InitialValue;
+    OS << "\n" << tok::r_brace;
+
+//    for (auto CI = OuterIfConds.begin(); CI != OuterIfConds.end(); ++CI) {
+//        OS << (CI != OuterIfConds.begin() ? ", " : "");
+//        OS << Lexer::getCharSourceRangeFromSourceRange(
+//                                                       SM, CI->getSourceRange()).str();
+//    }
+//    for (auto CI = InnerIfConds.begin(); CI != InnerIfConds.end(); ++CI) {
+//        OS << ", " << Lexer::getCharSourceRangeFromSourceRange(
+//                                                               SM, CI->getSourceRange()).str();
+//    }
+//    auto ThenStatementText = Lexer::getCharSourceRangeFromSourceRange(
+//                                                                      SM, Target.InnerIf->getThenStmt()->getSourceRange()).str();
+//    OS << " " << ThenStatementText;
+
+    llvm::dbgs() << Lexer::getCharSourceRangeFromSourceRange(SM, IE->getSourceRange()).str();
+  return false;
+}
+
 static std::unique_ptr<llvm::SetVector<Expr*>>
   findConcatenatedExpressions(ResolvedRangeInfo Info, ASTContext &Ctx) {
   if (Info.Kind != RangeKind::SingleExpression
@@ -1721,7 +1950,7 @@ public:
 
 FillProtocolStubContext FillProtocolStubContext::
 getContextFromCursorInfo(ResolvedCursorInfo CursorInfo) {
-  assert(CursorInfo.isValid());
+  // assert(CursorInfo.isValid());
   if (!CursorInfo.IsRef) {
     // If the type name is on the declared nominal, e.g. "class A {}"
     if (auto ND = dyn_cast<NominalTypeDecl>(CursorInfo.ValueD)) {
