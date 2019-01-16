@@ -1901,7 +1901,7 @@ static NestedIfStatementsInfo findNestedIfStatements(ResolvedCursorInfo CursorIn
 
       // Walk first AST node inside then statement recursively.
       auto AN = Result.LastThenStmt->getElement(0);
-      AN.walk(*this);
+      this->walk(AN);
       return false;
     }
   } Walker;
