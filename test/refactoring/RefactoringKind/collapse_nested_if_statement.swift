@@ -131,14 +131,9 @@ func testNestedWithElse() {
 // RUN: %refactor -source-filename %s -pos="top-level-else" | %FileCheck %s -check-prefix=CHECK-COLLAPSE-NESTED-IF-STATEMENT
 
 // CHECK-COLLAPSE-NESTED-IF-STATEMENT: Action begins
-// xCHECK-COLLAPSE-NESTED-IF-STATEMENT-NEXT: Collapse Nested If Expression
 // CHECK-COLLAPSE-NESTED-IF-STATEMENT-NEXT: Collapse Nested If Statement
 // CHECK-COLLAPSE-NESTED-IF-STATEMENT-NEXT: Action ends
 
 // RUN: %refactor -source-filename %s -pos="negative-1" | %FileCheck %s -check-prefix=CHECK-NONE
 // RUN: %refactor -source-filename %s -pos="negative-2" | %FileCheck %s -check-prefix=CHECK-NONE
 // RUN: %refactor -source-filename %s -pos="nested-with-else" | %FileCheck %s -check-prefix=CHECK-NONE
-
-// CHECK-NONE: Action begins
-// xCHECK-NONE-NEXT: Collapse Nested If Expression
-// CHECK-NONE-NEXT: Action ends
